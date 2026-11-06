@@ -42,7 +42,10 @@
     let areas = [];
     const { data: arq } = await sb.storage.from(BUCKET_MIDIA).download('dados/areas.json');
     if (arq) { try { areas = JSON.parse(await arq.text()); } catch (e) { areas = []; } }
-    else if (mb.admin) { return telaImportar(); }
+    const { count: nDocs } = await sb.from('docs').select('id', { count: 'exact', head: true });
+    if (mb.admin && (!arq || !nDocs || /[?&]importar/.test(location.search))) return telaImportar(!!arq, nDocs || 0);
+    const legado = {};
+    { const { data } = await sb.from('docs').select('id,data').eq('col', 'legado'); (data || []).forEach(r => legado[r.id] = r.data && r.data.nome); }
     const caminhos = [];
     areas.forEach(a => (a.posts || []).forEach(p => (p.midias || []).forEach(m => { [m.src, m.capa].forEach(s => { if (s && s.startsWith('m/')) caminhos.push(s.slice(2)); }); })));
     const assinados = {};
@@ -55,7 +58,7 @@
       if (m.capa && m.capa.startsWith('m/')) m.capa = assinados[m.capa.slice(2)] || m.capa;
     })));
 
-    window.claude = criarPonte(u, mb);
+    window.claude = criarPonte(u, mb, legado);
     const r = await fetch(CDN + 'app.html', { cache: 'no-store' });
     if (!r.ok) { msg('Não foi possível baixar o WorkZone. Recarregue a página.'); return; }
     let html = await r.text();
@@ -67,7 +70,7 @@
   }
 
   // ---------- ponte: imita window.claude.use(...) sobre o Supabase ----------
-  function criarPonte(u, mb) {
+  function criarPonte(u, mb, legado) {
     const cache = {}; // col -> Map(id -> data)
     const ouvintes = {}; // col -> Set(fn)
     let canal = null;
@@ -130,7 +133,7 @@
       can: async () => true,
       me: async () => { const md = u.user_metadata || {}; return { id: u.id, name: md.full_name || md.name || mb.nome || '', email: u.email, avatarUrl: md.avatar_url || md.picture || '' }; },
       profiles: async ids => {
-        const out = {}; ids.forEach(i => out[i] = { id: i, name: '', avatarUrl: '' });
+        const out = {}; ids.forEach(i => out[i] = { id: i, name: (legado && legado[i]) || '', avatarUrl: '' });
         const ok = ids.filter(i => /^[0-9a-f-]{36}$/i.test(i));
         if (ok.length) { const { data } = await sb.from('perfis').select('uid,nome,avatar_url').in('uid', ok); (data || []).forEach(p => out[p.uid] = { id: p.uid, name: p.nome || '', avatarUrl: p.avatar_url || '' }); }
         return out;
@@ -171,24 +174,45 @@
     return { use: async name => caps[name] || null };
   }
 
-  // ---------- importação inicial (só administrador, uma vez) ----------
-  function telaImportar() {
-    msg('<b>Primeiro acesso:</b> falta enviar as imagens e vídeos da área de aprovação. Descompacte o arquivo <b>workzone-midia.zip</b> que o Claude mandou e escolha a pasta <b>workzone-midia</b> abaixo.');
-    const inp = document.createElement('input'); inp.type = 'file'; inp.webkitdirectory = true; inp.multiple = true; inp.hidden = true; document.body.append(inp);
-    botoes([['Escolher a pasta workzone-midia', () => inp.click(), true]]);
-    inp.onchange = async () => {
-      const fs = [...inp.files]; if (!fs.length) return;
+  // ---------- importação (só administrador) ----------
+  function telaImportar(temMidia, nDocs) {
+    const passos = '<b>Importação para a nova WorkZone</b><br><br>' +
+      '1. <b>Dados</b> (cartões, comentários, avaliações): ' + (nDocs ? nDocs + ' registros já importados.' : 'ainda não importados.') + ' Escolha o arquivo <b>workzone-dados.json</b> exportado da WorkZone antiga.<br><br>' +
+      '2. <b>Imagens e vídeos</b>: ' + (temMidia ? 'já enviados.' : 'ainda não enviados.') + ' Descompacte o <b>workzone-midia.zip</b> e escolha a pasta <b>workzone-midia</b>.';
+    msg(passos);
+    const fj = document.createElement('input'); fj.type = 'file'; fj.accept = '.json,application/json'; fj.hidden = true;
+    const fd = document.createElement('input'); fd.type = 'file'; fd.webkitdirectory = true; fd.multiple = true; fd.hidden = true;
+    document.body.append(fj, fd);
+    botoes([['1. Escolher workzone-dados.json', () => fj.click(), !nDocs], ['2. Escolher a pasta workzone-midia', () => fd.click(), !temMidia], ['Abrir o WorkZone', () => { location.href = location.origin + location.pathname; }, !!(nDocs && temMidia)]]);
+    fj.onchange = async () => {
+      const f = fj.files[0]; if (!f) return; botoes([]);
+      try {
+        const dados = JSON.parse(await f.text()); if (!dados || !Array.isArray(dados.docs)) throw new Error('arquivo inválido');
+        msg('Apagando a cópia anterior…');
+        const { error: ed } = await sb.from('docs').delete().neq('col', '__nada__'); if (ed) throw ed;
+        const linhas = dados.docs.map(d => { const x = { ...d.data }; if (d.col === 'pp') delete x.uid; return { col: d.col, id: d.id, data: x }; });
+        Object.entries(dados.pessoas || {}).forEach(([k, v]) => linhas.push({ col: 'legado', id: k, data: { nome: v } }));
+        for (let i = 0; i < linhas.length; i += 400) {
+          const { error } = await sb.from('docs').upsert(linhas.slice(i, i + 400)); if (error) throw error;
+          msg('Importando dados… ' + Math.min(i + 400, linhas.length) + ' de ' + linhas.length);
+        }
+        msg('Dados importados: ' + linhas.length + ' registros.');
+      } catch (e) { msg('Não foi possível importar os dados: ' + esc(e.message || e)); }
+      setTimeout(() => location.reload(), 1500);
+    };
+    fd.onchange = async () => {
+      const fs = [...fd.files]; if (!fs.length) return;
       botoes([]); let ok = 0, falha = 0;
       for (const f of fs) {
         const nome = f.webkitRelativePath.split('/').slice(1).join('/') || f.name;
         const destino = nome === 'areas.json' ? 'dados/areas.json' : nome;
-        const tipo = f.type || (nome.endsWith('.json') ? 'application/json' : 'application/octet-stream');
+        const tipo = f.type || (nome.endsWith('.json') ? 'application/json' : nome.endsWith('.css') ? 'text/css' : 'application/octet-stream');
         const { error } = await sb.storage.from(BUCKET_MIDIA).upload(destino, f, { contentType: tipo, upsert: true });
         error ? falha++ : ok++;
-        msg('Enviando… ' + (ok + falha) + ' de ' + fs.length + (falha ? ' (' + falha + ' com erro)' : ''));
+        msg('Enviando imagens e vídeos… ' + (ok + falha) + ' de ' + fs.length + (falha ? ' (' + falha + ' com erro)' : ''));
       }
       msg('Envio concluído: ' + ok + ' arquivos' + (falha ? ', ' + falha + ' com erro' : '') + '.');
-      botoes([['Abrir o WorkZone', () => location.reload(), true]]);
+      setTimeout(() => location.reload(), 1500);
     };
   }
 
