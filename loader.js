@@ -40,22 +40,24 @@
 
     // dados da área de aprovação + mídia
     let areas = [];
-    const { data: arq } = await sb.storage.from(BUCKET_MIDIA).download('dados/areas.json');
+    let PREF = '';
+    let { data: arq } = await sb.storage.from(BUCKET_MIDIA).download('dados/areas.json');
+    if (!arq) { const r2 = await sb.storage.from(BUCKET_MIDIA).download('workzone-midia/areas.json'); if (r2.data) { arq = r2.data; PREF = 'workzone-midia/'; } }
     if (arq) { try { areas = JSON.parse(await arq.text()); } catch (e) { areas = []; } }
     const { count: nDocs } = await sb.from('docs').select('id', { count: 'exact', head: true });
     if (mb.admin && (!arq || !nDocs || /[?&]importar/.test(location.search))) return telaImportar(!!arq, nDocs || 0);
     const legado = {};
     { const { data } = await sb.from('docs').select('id,data').eq('col', 'legado'); (data || []).forEach(r => legado[r.id] = r.data && r.data.nome); }
     const caminhos = [];
-    areas.forEach(a => (a.posts || []).forEach(p => (p.midias || []).forEach(m => { [m.src, m.capa].forEach(s => { if (s && s.startsWith('m/')) caminhos.push(s.slice(2)); }); })));
+    areas.forEach(a => (a.posts || []).forEach(p => (p.midias || []).forEach(m => { [m.src, m.capa].forEach(s => { if (s && s.startsWith('m/')) caminhos.push(PREF + s.slice(2)); }); })));
     const assinados = {};
     for (let i = 0; i < caminhos.length; i += 200) {
       const { data } = await sb.storage.from(BUCKET_MIDIA).createSignedUrls(caminhos.slice(i, i + 200), 60 * 60 * 12);
       (data || []).forEach(d => { if (d.signedUrl) assinados[d.path] = d.signedUrl; });
     }
     areas.forEach(a => (a.posts || []).forEach(p => (p.midias || []).forEach(m => {
-      if (m.src && m.src.startsWith('m/')) m.src = assinados[m.src.slice(2)] || m.src;
-      if (m.capa && m.capa.startsWith('m/')) m.capa = assinados[m.capa.slice(2)] || m.capa;
+      if (m.src && m.src.startsWith('m/')) m.src = assinados[PREF + m.src.slice(2)] || m.src;
+      if (m.capa && m.capa.startsWith('m/')) m.capa = assinados[PREF + m.capa.slice(2)] || m.capa;
     })));
 
     window.claude = criarPonte(u, mb, legado);
@@ -64,7 +66,7 @@
     let html = await r.text();
     const json = JSON.stringify(areas).replace(/<\//g, '<\\/');
     let fontes = '';
-    try { const { data: fc } = await sb.storage.from(BUCKET_MIDIA).download('fontes.css'); if (fc) fontes = await fc.text(); } catch (e) { }
+    try { const { data: fc } = await sb.storage.from(BUCKET_MIDIA).download(PREF + 'fontes.css'); if (fc) fontes = await fc.text(); } catch (e) { }
     html = html.split('__CDN__').join(CDN).replace('__DADOS__', () => json).replace('</head>', () => '<style>' + fontes.replace(/<\//g, '') + '</style></head>');
     document.open(); document.write(html); document.close();
   }
@@ -197,14 +199,15 @@
           msg('Importando dados… ' + Math.min(i + 400, linhas.length) + ' de ' + linhas.length);
         }
         msg('Dados importados: ' + linhas.length + ' registros.');
-      } catch (e) { msg('Não foi possível importar os dados: ' + esc(e.message || e)); }
-      setTimeout(() => location.reload(), 1500);
+        setTimeout(() => location.reload(), 1500);
+      } catch (e) { msg('Não foi possível importar os dados: ' + esc(e.message || e)); botoes([['Tentar de novo', () => location.reload(), true]]); }
     };
     fd.onchange = async () => {
       const fs = [...fd.files]; if (!fs.length) return;
       botoes([]); let ok = 0, falha = 0;
       for (const f of fs) {
-        const nome = f.webkitRelativePath.split('/').slice(1).join('/') || f.name;
+        const rel = f.webkitRelativePath || f.name; const k = rel.lastIndexOf('workzone-midia/');
+        const nome = k >= 0 ? rel.slice(k + 15) : (rel.split('/').slice(1).join('/') || f.name);
         const destino = nome === 'areas.json' ? 'dados/areas.json' : nome;
         const tipo = f.type || (nome.endsWith('.json') ? 'application/json' : nome.endsWith('.css') ? 'text/css' : 'application/octet-stream');
         const { error } = await sb.storage.from(BUCKET_MIDIA).upload(destino, f, { contentType: tipo, upsert: true });
