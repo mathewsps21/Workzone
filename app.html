@@ -1171,10 +1171,10 @@ function anexosEl(cid,c){
     const r=el('div','anexo'); const href = a.tipo==='link' ? a.url : blobUrl(a.asset);
     const mini = a.tipo==='link' ? el('a','mini') : el('button','mini'); if(a.tipo==='link'){ mini.href=href; mini.target='_blank'; mini.rel='noopener'; } else { mini.onclick=()=>verAnexo(a); mini.setAttribute('aria-label','Ver '+(a.nome||'anexo')); }
     if(a.tipo==='arquivo' && (a.mime||'').startsWith('image/')){ const im=el('img'); im.src=href; im.alt=''; im.loading='lazy'; im.onerror=()=>{ im.remove(); mini.textContent='IMG'; }; mini.append(im); }
-    else mini.textContent = a.tipo==='link' ? '🔗' : (a.mime||'').startsWith('video/') ? 'VÍDEO' : a.mime==='application/pdf' ? 'PDF' : ((a.nome||'').split('.').pop()||'ARQ').toUpperCase().slice(0,4);
+    else mini.textContent = a.tipo==='link' ? (a.noTrello ? ((a.mime||'').startsWith('image/')?'IMG':(a.mime||'').startsWith('video/')?'VÍDEO':a.mime==='application/pdf'?'PDF':'ARQ') : '🔗') : (a.mime||'').startsWith('video/') ? 'VÍDEO' : a.mime==='application/pdf' ? 'PDF' : ((a.nome||'').split('.').pop()||'ARQ').toUpperCase().slice(0,4);
     const info=el('div'); let nm; if(a.tipo==='link'){ nm=el('a','nm',a.nome||'Anexo'); nm.href=href; nm.target='_blank'; nm.rel='noopener'; } else { nm=el('button','nm',a.nome||'Anexo'); nm.onclick=()=>verAnexo(a); }
     const nl=el('div'); nl.append(nm); if(a.tipo==='arquivo' && c.capa===a.asset) nl.append(el('span','tag','Capa'));
-    info.append(nl, el('div','mt',['Adicionado em '+fmtData(a.em,true), a.tam?fmtTam(a.tam):'', a.tipo==='link'?'link':''].filter(Boolean).join(' · ')));
+    info.append(nl, el('div','mt',['Adicionado em '+fmtData(a.em,true), a.tam?fmtTam(a.tam):'', a.tipo==='link'?(a.noTrello?'arquivo no Trello (abre logado no Trello)':/drive\.google|docs\.google/.test(a.url||'')?'Google Drive':'link'):'', a.por&&!/^[0-9a-f-]{36}$/i.test(a.por)&&!String(a.por).startsWith('u_')?'por '+a.por:''].filter(Boolean).join(' · ')));
     const ac=el('div','ac');
     if(a.tipo==='arquivo' && (a.mime||'').startsWith('image/')){ const bc=el('button',null,c.capa===a.asset?'Remover capa':'Tornar capa'); bc.onclick=()=>salvarCard(cid,{capa:c.capa===a.asset?null:a.asset}); ac.append(bc); }
     if(a.tipo==='arquivo' && downloads){ const bd=el('button',null,'Baixar'); bd.onclick=()=>baixarAnexo(a); ac.append(bd); }
