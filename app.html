@@ -584,10 +584,11 @@ function renderComposer(){
 }
 
 async function renderNotas(){
+  renderEnvio();
   const N=$('notas'); const p=post(); const lst=notasDoPost();
   const ids=[...new Set(lst.map(n=>n.autor).filter(Boolean))];
   const ps = user && ids.length ? await user.profiles(ids) : {};
-  if(post()!==p) return;
+  if(post()!==p){ renderEnvio(); return; }
   N.textContent='';
   const ab=lst.filter(n=>!n.resolvida).length;
   $('hNotas').textContent='Correções deste post'+(lst.length?` (${ab} em aberto)`:'');
