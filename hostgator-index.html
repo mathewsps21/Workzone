@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>WorkZone · PS21</title>
+<style>
+  html,body{margin:0;height:100%;background:#0f1110;color:#f2f2ee;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  #wz-tela{min-height:100%;display:grid;place-content:center;gap:22px;text-align:center;padding:24px}
+  #wz-tela img{width:220px;max-width:70vw;margin:0 auto;filter:invert(1)}
+  .wz-msg{max-width:420px;line-height:1.5;font-size:15px;color:#cfd2cc}
+  .wz-acoes{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .wz-acoes button{font:inherit;font-weight:600;border:1px solid #3a3f3b;background:#1b1e1c;color:#f2f2ee;border-radius:10px;padding:11px 18px;cursor:pointer}
+  .wz-acoes button.prim{background:#16a34a;border-color:#16a34a;color:#fff}
+</style>
+</head>
+<body>
+<div id="wz-tela"><img id="wz-logo" alt="WorkZone" hidden><div class="wz-msg">Carregando…</div><div class="wz-acoes"></div></div>
+<script>
+(async function(){
+  var REPO='mathewsps21/workzone', sha='main';
+  try{ var r=await fetch('https://api.github.com/repos/'+REPO+'/commits/main',{headers:{Accept:'application/vnd.github.sha'},cache:'no-store'}); if(r.ok) sha=(await r.text()).trim(); }catch(e){}
+  var cdn='https://cdn.jsdelivr.net/gh/'+REPO+'@'+sha+'/';
+  var logo=document.getElementById('wz-logo'); logo.src=cdn+'m/workzone-logo.png'; logo.hidden=false;
+  function carregar(src){ return new Promise(function(ok,erro){ var s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=erro; document.head.appendChild(s); }); }
+  try{
+    var cfg=await (await fetch(cdn+'config.json')).json();
+    window.WZ_CFG={url:cfg.url,key:cfg.key,cdn:cdn};
+    await carregar('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js');
+    await carregar(cdn+'loader.js');
+  }catch(e){ document.querySelector('.wz-msg').textContent='Não foi possível carregar o WorkZone. Verifique a internet e recarregue a página.'; }
+})();
+</script>
+</body>
+</html>
